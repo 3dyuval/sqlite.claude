@@ -10,10 +10,11 @@ Query and search Claude Code conversation history via a denormalized SQLite data
 
 ## Architecture
 
-The system has two components:
+The system has three components:
 
 1. **Sync script** (`<skill_base_dir>/scripts/index.ts`) — ingests JSONL transcripts into SQLite, append-only with mtime tracking
-2. **SQLite database** (`~/.claude/claude.sqlite`) — the query target, three layers of access
+2. **Search CLI** (`<skill_base_dir>/scripts/search.ts`) — keyword and semantic search with filters
+3. **SQLite database** (`~/.claude/claude.sqlite`) — the query target, three layers of access
 
 ### Database Location
 
@@ -118,58 +119,36 @@ WHERE timestamp BETWEEN 1706745600000 AND 1707350400000
 SELECT datetime(timestamp/1000, 'unixepoch', 'localtime') as time, ...
 ```
 
-### Full-text search
+### Full-text search (CLI)
 
-```sql
--- keyword search with path + time filter
-SELECT l.project, l.role, substr(l.text, 1, 200) as preview,
-       datetime(l.timestamp/1000, 'unixepoch', 'localtime') as time
-FROM log l
-JOIN log_fts ON log_fts.rowid = l.id
-WHERE log_fts MATCH 'typescript'
-  AND l.project GLOB '/home/user/projects/*'
-  AND l.timestamp > (strftime('%s','now','-30 days') * 1000)
-ORDER BY l.timestamp DESC
-LIMIT 20;
+```bash
+# keyword search
+bun <skill_base_dir>/scripts/search.ts fts "typescript AND react"
+
+# with filters
+bun <skill_base_dir>/scripts/search.ts fts "authentication" --project "/home/user/projects/*" --days 30 --limit 20
 ```
 
-FTS5 supports `AND`, `OR`, `NOT`, phrase queries (`"exact phrase"`), prefix queries (`react*`).
+FTS5 query syntax: `AND`, `OR`, `NOT`, phrase queries (`"exact phrase"`), prefix queries (`react*`).
 
-### Semantic search via embeddings
+### Semantic search (CLI)
 
-Requires loading the sqlite-vec extension. Use from bun:
+Requires ollama running with `nomic-embed-text`.
 
-```typescript
-import { Database } from "bun:sqlite";
-import * as sqliteVec from "sqlite-vec";
+```bash
+# semantic similarity search
+bun <skill_base_dir>/scripts/search.ts semantic "debugging memory leaks"
 
-const db = new Database("~/.claude/claude.sqlite");
-db.loadExtension(sqliteVec.getLoadablePath());
-
-// embed the query
-const queryVec = await embed("debugging memory leaks");
-
-// find nearest conversation chunks
-const results = db.prepare(`
-  SELECT c.session_id, c.project,
-         datetime(c.ts_start/1000, 'unixepoch', 'localtime') as started,
-         datetime(c.ts_end/1000, 'unixepoch', 'localtime') as ended,
-         vec_distance_cosine(v.embedding, ?) as distance
-  FROM chunks_vec v
-  JOIN chunks c ON c.id = v.rowid
-  WHERE c.project GLOB '/home/user/projects/*'
-  ORDER BY distance
-  LIMIT 10
-`).all(new Uint8Array(queryVec.buffer));
+# with filters
+bun <skill_base_dir>/scripts/search.ts semantic "browser automation testing" --project "/home/user/projects/*" --days 7
 ```
 
-Then drill into the matched session via the `log` table:
+### Drill into a session
 
-```sql
-SELECT role, text, datetime(timestamp/1000, 'unixepoch', 'localtime') as time
-FROM log
-WHERE session_id = '<matched_session_id>'
-ORDER BY timestamp;
+Use the `session_id` from search results to see full messages:
+
+```bash
+bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>
 ```
 
 ### Useful aggregate queries
@@ -192,7 +171,8 @@ FROM log GROUP BY day ORDER BY day DESC LIMIT 14;
 
 ## Workflow
 
-1. Run sync: `bun run <skill_base_dir>/scripts/index.ts`
-2. For keyword queries, use `sqlite3 ~/.claude/claude.sqlite` with `log` + `log_fts`
-3. For semantic search, use a bun script that loads sqlite-vec and queries `chunks_vec`
-4. Use chunk results (`session_id`, `ts_start`, `ts_end`) to drill into `log` for full messages
+1. Sync: `bun run <skill_base_dir>/scripts/index.ts`
+2. Keyword search: `bun <skill_base_dir>/scripts/search.ts fts "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
+3. Semantic search: `bun <skill_base_dir>/scripts/search.ts semantic "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
+4. Drill into session: `bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>`
+5. For complex/aggregate queries, use `sqlite3 ~/.claude/claude.sqlite` directly with the schema above
