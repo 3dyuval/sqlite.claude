@@ -11,20 +11,33 @@ const DB_PATH = join(CLAUDE_DIR, "claude.sqlite");
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
 
-const usage = `Usage: bun search.ts <mode> <query> [options]
+const usage = `sqlite.claude search — query your Claude Code conversation history
 
-Modes:
-  fts <query>        Full-text keyword search (FTS5 syntax: AND, OR, NOT, "phrase", prefix*)
-  semantic <query>   Semantic similarity search via embeddings (requires ollama)
+Usage:
+  <script> fts <query> [options]        Keyword search (FTS5)
+  <script> semantic <query> [options]   Similarity search (requires ollama)
 
 Options:
-  --project <glob>   Filter by project path (GLOB pattern)
+  --project [<glob>] Filter by project path (default: current directory)
   --days <n>         Only search last N days
   --limit <n>        Max results (default: 10)
-  --session <id>     Drill into a specific session's messages`;
+  --session <id>     Drill into a specific session's messages
+  -h, --help         Show this help
+
+Examples:
+  <script> fts "authentication AND jwt"
+  <script> fts "react" --project "/home/user/projects/*" --days 7
+  <script> semantic "how to debug memory leaks" --limit 5
+  <script> fts "" --session abc123-def456
+
+FTS5 query syntax: AND, OR, NOT, "exact phrase", prefix*`;
 
 // parse args
 const args = process.argv.slice(2);
+if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
+  console.log(usage);
+  process.exit(0);
+}
 if (args.length < 2) {
   console.log(usage);
   process.exit(1);
@@ -39,7 +52,11 @@ let sessionId: string | null = null;
 
 for (let i = 2; i < args.length; i++) {
   switch (args[i]) {
-    case "--project": project = args[++i]!; break;
+    case "--project": {
+      const next = args[i + 1];
+      project = (next && !next.startsWith("-")) ? args[++i]! : process.cwd();
+      break;
+    }
     case "--days": days = parseInt(args[++i]!, 10); break;
     case "--limit": limit = parseInt(args[++i]!, 10); break;
     case "--session": sessionId = args[++i]!; break;
