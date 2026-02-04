@@ -119,6 +119,31 @@ WHERE timestamp BETWEEN 1706745600000 AND 1707350400000
 SELECT datetime(timestamp/1000, 'unixepoch', 'localtime') as time, ...
 ```
 
+### Dump conversation text (CLI)
+
+Outputs raw `role: text` lines, pipe-friendly for summarization or export.
+
+```bash
+# today's text for current project
+bun <skill_base_dir>/scripts/search.ts dump --project --days 1
+
+# pipe to ollama for summarization
+bun <skill_base_dir>/scripts/search.ts dump --project --days 1 | ollama run qwen2.5-coder:3b "Summarize:"
+
+# last 7 days, all projects
+bun <skill_base_dir>/scripts/search.ts dump --days 7
+```
+
+### List recent sessions (CLI)
+
+```bash
+# recent sessions across all projects
+bun <skill_base_dir>/scripts/search.ts recent
+
+# recent sessions for current project
+bun <skill_base_dir>/scripts/search.ts recent --project --days 7
+```
+
 ### Full-text search (CLI)
 
 ```bash
@@ -172,7 +197,10 @@ FROM log GROUP BY day ORDER BY day DESC LIMIT 14;
 ## Workflow
 
 1. Sync: `bun run <skill_base_dir>/scripts/index.ts`
-2. Keyword search: `bun <skill_base_dir>/scripts/search.ts fts "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
-3. Semantic search: `bun <skill_base_dir>/scripts/search.ts semantic "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
-4. Drill into session: `bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>`
-5. For complex/aggregate queries, use `sqlite3 ~/.claude/claude.sqlite` directly with the schema above
+2. Dump text: `bun <skill_base_dir>/scripts/search.ts dump [--project] [--days <n>]`
+3. Recent activity: `bun <skill_base_dir>/scripts/search.ts recent [--project] [--days <n>] [--limit <n>]`
+4. Keyword search: `bun <skill_base_dir>/scripts/search.ts fts "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
+5. Semantic search: `bun <skill_base_dir>/scripts/search.ts semantic "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
+6. Drill into session: `bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>`
+7. Raw SQL: `bun <skill_base_dir>/scripts/search.ts sql "<query>"`
+8. For complex/aggregate queries, use `sqlite3 ~/.claude/claude.sqlite` directly with the schema above

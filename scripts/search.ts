@@ -14,8 +14,11 @@ const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
 const usage = `sqlite.claude search — query your Claude Code conversation history
 
 Usage:
+  <script> dump [options]               Output conversation text (pipe-friendly)
+  <script> recent [options]             List recent sessions
   <script> fts <query> [options]        Keyword search (FTS5)
   <script> semantic <query> [options]   Similarity search (requires ollama)
+  <script> sql <query>                 Run raw SQL (sqlite-vec loaded)
 
 Options:
   --project [<glob>] Filter by project path (default: current directory)
@@ -25,6 +28,9 @@ Options:
   -h, --help         Show this help
 
 Examples:
+  <script> dump --project --days 1
+  <script> dump --project --days 7 | ollama run qwen2.5-coder:3b "Summarize:"
+  <script> recent --project --days 7
   <script> fts "authentication AND jwt"
   <script> fts "react" --project "/home/user/projects/*" --days 7
   <script> semantic "how to debug memory leaks" --limit 5
@@ -38,13 +44,14 @@ if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
   console.log(usage);
   process.exit(0);
 }
-if (args.length < 2) {
+const mode = args[0]!;
+
+if (mode !== "recent" && mode !== "dump" && mode !== "sql" && args.length < 2) {
   console.log(usage);
   process.exit(1);
 }
 
-const mode = args[0]!;
-const query = args[1]!;
+const query = args[1] ?? "";
 let project: string | null = null;
 let days: number | null = null;
 let limit = 10;
@@ -95,7 +102,43 @@ if (days) {
   params.push(`-${days} days`);
 }
 
-if (mode === "fts") {
+if (mode === "dump") {
+  const clauses = ["l.text IS NOT NULL", ...wheres];
+  const where = " WHERE " + clauses.join(" AND ");
+  const rows = db.prepare(`
+    SELECT l.role, l.text
+    FROM log l
+    ${where}
+    ORDER BY l.timestamp
+  `).all(...params) as any[];
+
+  for (const r of rows) {
+    console.log(`${r.role}: ${r.text}`);
+  }
+
+} else if (mode === "recent") {
+  const where = wheres.length ? " WHERE " + wheres.join(" AND ") : "";
+  const results = db.prepare(`
+    SELECT l.session_id, l.project, l.display,
+           count(*) as messages,
+           datetime(min(l.timestamp)/1000, 'unixepoch', 'localtime') as started,
+           datetime(max(l.timestamp)/1000, 'unixepoch', 'localtime') as ended
+    FROM log l
+    ${where}
+    GROUP BY l.session_id
+    ORDER BY max(l.timestamp) DESC
+    LIMIT ?
+  `).all(...params, limit) as any[];
+
+  for (const r of results) {
+    console.log(`\n${r.started} -> ${r.ended}  (${r.messages} msgs)`);
+    console.log(`  project: ${r.project}`);
+    console.log(`  session: ${r.session_id}`);
+    if (r.display) console.log(`  prompt:  ${r.display.replace(/\n/g, " ").substring(0, 120)}`);
+  }
+  console.log(`\n${results.length} sessions`);
+
+} else if (mode === "fts") {
   const where = wheres.length ? " AND " + wheres.join(" AND ") : "";
   const results = db.prepare(`
     SELECT l.session_id, l.project, l.role,
@@ -153,8 +196,19 @@ if (mode === "fts") {
   }
   console.log(`\n${results.length} results`);
 
+} else if (mode === "sql") {
+  if (!query) {
+    console.error("sql mode requires a query argument");
+    process.exit(1);
+  }
+  const rows = db.prepare(query).all() as any[];
+  for (const row of rows) {
+    const vals = Object.values(row);
+    console.log(vals.length === 1 ? vals[0] : vals.join("\t"));
+  }
+
 } else {
-  console.error(`Unknown mode: ${mode}. Use 'fts' or 'semantic'.`);
+  console.error(`Unknown mode: ${mode}. Use 'recent', 'fts', 'semantic', or 'sql'.`);
   process.exit(1);
 }
 
