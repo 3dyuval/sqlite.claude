@@ -159,6 +159,7 @@ function syncLog(db: Database) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const deleteBySession = db.prepare("DELETE FROM log WHERE session_id = ?");
+  const countBySession = db.prepare("SELECT count(*) as n FROM log WHERE session_id = ?");
 
   if (!existsSync(PROJECTS_DIR)) return 0;
 
@@ -192,9 +193,14 @@ function syncLog(db: Database) {
       const lines = readJsonl(filePath);
 
       const batch = db.transaction(() => {
-        // re-ingest changed file
-        if (prev) deleteBySession.run(sessionId);
+        // re-ingest changed file, track previous count to report net new
+        let prevCount = 0;
+        if (prev) {
+          prevCount = (countBySession.get(sessionId) as any).n;
+          deleteBySession.run(sessionId);
+        }
 
+        let inserted = 0;
         for (const entry of lines) {
           if (entry.type !== "user" && entry.type !== "assistant") continue;
           const text = extractText(entry.message?.content);
@@ -210,8 +216,9 @@ function syncLog(db: Database) {
             entry.message?.model ?? null,
             tsToUnix(entry.timestamp)
           );
-          total++;
+          inserted++;
         }
+        total += inserted - prevCount;
         upsertSync.run(filePath, mtime, size);
       });
       batch();
