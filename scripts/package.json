@@ -10,6 +10,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "@types/yargs": "^17.0.35",
+    "ora": "^9.3.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "yargs": "^18.0.0"
   }
 }

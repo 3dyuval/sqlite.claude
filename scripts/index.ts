@@ -5,6 +5,18 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
+import ora from "ora";
+import "./env.ts";
+
+const OLLAMA_URL = process.env.OLLAMA_URL;
+const EMBED_MODEL = process.env.EMBED_MODEL;
+const EMBED_DIM = Number(process.env.EMBED_DIM);
+
+if (!OLLAMA_URL || !EMBED_MODEL || !EMBED_DIM) {
+  console.error("Missing required env vars: OLLAMA_URL, EMBED_MODEL, EMBED_DIM");
+  console.error("Set them in .env at project root or pass --env-file=path/to/.env");
+  process.exit(1);
+}
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR
   ? join(process.env.CLAUDE_CONFIG_DIR, "claude")
@@ -12,9 +24,6 @@ const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR
 const HISTORY_FILE = join(CLAUDE_DIR, "history.jsonl");
 const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
 const DB_PATH = join(CLAUDE_DIR, "claude.sqlite");
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
-const EMBED_DIM = 768;
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -57,6 +66,12 @@ function tsToUnix(ts: any): number | null {
   if (typeof ts === "number") return ts;
   const d = new Date(ts);
   return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 function sha256(text: string): string {
@@ -138,7 +153,7 @@ function ensureSchema(db: Database) {
 
 // ── sync log table ──────────────────────────────────────────────────
 
-function syncLog(db: Database) {
+function syncLog(db: Database, onProgress?: (msg: string) => void) {
   // build session→project+display lookup from history.jsonl
   const sessionMeta = new Map<string, { project: string; display: string | null }>();
   const history = readJsonl(HISTORY_FILE);
@@ -161,89 +176,115 @@ function syncLog(db: Database) {
   const deleteBySession = db.prepare("DELETE FROM log WHERE session_id = ?");
   const countBySession = db.prepare("SELECT count(*) as n FROM log WHERE session_id = ?");
 
-  if (!existsSync(PROJECTS_DIR)) return 0;
+  if (!existsSync(PROJECTS_DIR)) return { messages: 0, sessions: 0 };
 
   let total = 0;
+  let newSessions = 0;
+  let updatedSessions = 0;
   const projectDirs = readdirSync(PROJECTS_DIR);
 
+  // collect all jsonl files for progress tracking
+  const allFiles: { dir: string; file: string }[] = [];
   for (const dir of projectDirs) {
     const dirPath = join(PROJECTS_DIR, dir);
-    let files: string[];
     try {
-      files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
-    } catch {
-      continue;
-    }
-
-    for (const file of files) {
-      const filePath = join(dirPath, file);
-      const stat = statSync(filePath);
-      const mtime = Math.floor(stat.mtimeMs);
-      const size = stat.size;
-
-      // skip unchanged files
-      const prev = getSync.get(filePath) as any;
-      if (prev && prev.mtime === mtime && prev.size === size) continue;
-
-      const sessionId = file.replace(/\.jsonl$/, "");
-      const meta = sessionMeta.get(sessionId);
-      const project = meta?.project ?? dir.replace(/^-/, "").replace(/-/g, "/");
-      const display = meta?.display ?? null;
-
-      const lines = readJsonl(filePath);
-
-      const batch = db.transaction(() => {
-        // re-ingest changed file, track previous count to report net new
-        let prevCount = 0;
-        if (prev) {
-          prevCount = (countBySession.get(sessionId) as any).n;
-          deleteBySession.run(sessionId);
-        }
-
-        let inserted = 0;
-        for (const entry of lines) {
-          if (entry.type !== "user" && entry.type !== "assistant") continue;
-          const text = extractText(entry.message?.content);
-          insertLog.run(
-            entry.sessionId ?? sessionId,
-            project,
-            display,
-            entry.uuid ?? null,
-            entry.parentUuid ?? null,
-            entry.type,
-            text || null,
-            extractTools(entry.message?.content),
-            entry.message?.model ?? null,
-            tsToUnix(entry.timestamp)
-          );
-          inserted++;
-        }
-        total += inserted - prevCount;
-        upsertSync.run(filePath, mtime, size);
-      });
-      batch();
-    }
+      for (const f of readdirSync(dirPath)) {
+        if (f.endsWith(".jsonl")) allFiles.push({ dir, file: f });
+      }
+    } catch { continue; }
   }
-  return total;
+
+  let processed = 0;
+  for (const { dir, file } of allFiles) {
+    processed++;
+    onProgress?.(`${processed}/${allFiles.length} files`);
+    const filePath = join(PROJECTS_DIR, dir, file);
+    const stat = statSync(filePath);
+    const mtime = Math.floor(stat.mtimeMs);
+    const size = stat.size;
+
+    // skip unchanged files
+    const prev = getSync.get(filePath) as any;
+    if (prev && prev.mtime === mtime && prev.size === size) continue;
+
+    const sessionId = file.replace(/\.jsonl$/, "");
+    const meta = sessionMeta.get(sessionId);
+    const project = meta?.project ?? dir.replace(/^-/, "").replace(/-/g, "/");
+    const display = meta?.display ?? null;
+
+    const lines = readJsonl(filePath);
+
+    const batch = db.transaction(() => {
+      // re-ingest changed file, track previous count to report net new
+      let prevCount = 0;
+      if (prev) {
+        prevCount = (countBySession.get(sessionId) as any).n;
+        deleteBySession.run(sessionId);
+      } else {
+        newSessions++;
+      }
+      updatedSessions++;
+
+      let inserted = 0;
+      for (const entry of lines) {
+        if (entry.type !== "user" && entry.type !== "assistant") continue;
+        const text = extractText(entry.message?.content);
+        insertLog.run(
+          entry.sessionId ?? sessionId,
+          project,
+          display,
+          entry.uuid ?? null,
+          entry.parentUuid ?? null,
+          entry.type,
+          text || null,
+          extractTools(entry.message?.content),
+          entry.message?.model ?? null,
+          tsToUnix(entry.timestamp)
+        );
+        inserted++;
+      }
+      total += inserted - prevCount;
+      upsertSync.run(filePath, mtime, size);
+    });
+    batch();
+  }
+  return { messages: total, newSessions, updatedSessions };
 }
 
 // ── sync chunks + embeddings ────────────────────────────────────────
 
-async function syncChunks(db: Database) {
-  // get all sessions that have log entries but no chunk (or stale chunk)
+async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
+  // sessions with no chunk, or chunks missing their embedding vector
   const sessions = db
     .prepare(
       `SELECT l.session_id, l.project,
               min(l.timestamp) as ts_start, max(l.timestamp) as ts_end
        FROM log l
        LEFT JOIN chunks c ON c.session_id = l.session_id
+       LEFT JOIN chunks_vec v ON v.rowid = c.id
        WHERE l.text IS NOT NULL
        GROUP BY l.session_id
-       HAVING c.id IS NULL`
+       HAVING c.id IS NULL OR v.rowid IS NULL`
     )
     .all() as any[];
 
-  if (!sessions.length) return 0;
+  if (!sessions.length) {
+    onProgress?.(`0 sessions`);
+    return 0;
+  }
+
+  // estimate total bytes: sum text per session, capped at 8KB each (same as chunk logic)
+  const estBytes = db.prepare(`
+    SELECT coalesce(sum(min(bytes, 8000)), 0) as total FROM (
+      SELECT sum(length(l.text)) as bytes
+      FROM log l
+      WHERE l.session_id IN (${sessions.map(() => "?").join(",")})
+        AND l.text IS NOT NULL AND l.role IN ('user','assistant')
+        AND (l.tools IS NULL OR l.tools = '[]')
+      GROUP BY l.session_id
+    )
+  `).get(...sessions.map(s => s.session_id)) as any;
+  const totalEst = fmtSize(estBytes.total);
 
   const getChunkTexts = db.prepare(
     `SELECT role, text FROM log
@@ -260,6 +301,7 @@ async function syncChunks(db: Database) {
   const replaceVec = db.prepare("UPDATE chunks_vec SET embedding = ? WHERE rowid = ?");
 
   let embedded = 0;
+  let bytesEmbedded = 0;
   for (const session of sessions) {
     const rows = getChunkTexts.all(session.session_id) as any[];
     if (!rows.length) continue;
@@ -302,7 +344,8 @@ async function syncChunks(db: Database) {
         insertVec.run(chunkRow.id, new Uint8Array(vec.buffer));
       }
       embedded++;
-      if (embedded % 25 === 0) process.stdout.write(`  ${embedded} sessions embedded\r`);
+      bytesEmbedded += chunk.length;
+      onProgress?.(`${embedded}/${sessions.length} sessions (${fmtSize(bytesEmbedded)}/~${totalEst})`);
     } catch (e: any) {
       console.error(`  embed failed for ${session.session_id}: ${e.message}`);
     }
@@ -316,15 +359,52 @@ const db = new Database(DB_PATH);
 db.loadExtension(sqliteVec.getLoadablePath());
 ensureSchema(db);
 
-console.log("Syncing messages...");
-const msgCount = syncLog(db);
-console.log(`  ${msgCount} new messages`);
+const noStdin = { discardStdin: false };
+let lastProgress = "";
 
-console.log("Syncing embeddings...");
-const embCount = await syncChunks(db);
-console.log(`  ${embCount} sessions embedded`);
+function printStats() {
+  const stats = db.prepare(`
+    SELECT
+      (SELECT count(*) FROM log) as messages,
+      (SELECT count(DISTINCT session_id) FROM log) as sessions,
+      (SELECT count(*) FROM chunks) as chunks,
+      (SELECT count(*) FROM chunks_vec) as vectors
+  `).get() as any;
+  const missing = stats.chunks - stats.vectors;
+  console.log(`${stats.messages} messages, ${stats.sessions} sessions, ${stats.chunks} chunks, ${stats.vectors} vectors`);
+  if (missing > 0) console.log(`! ${missing} chunks missing embeddings. Re-run with Ollama`);
+}
 
-const totals = db.prepare("SELECT (SELECT count(*) FROM log) as msgs, (SELECT count(*) FROM chunks) as chunks").get() as any;
-console.log(`Total: ${totals.msgs} messages, ${totals.chunks} chunks`);
-console.log(`Written to ${DB_PATH}`);
-db.close();
+process.on("exit", () => {
+  try {
+    if (lastProgress) console.log(lastProgress);
+    printStats();
+    console.log(DB_PATH);
+    db.close();
+  } catch {}
+});
+
+printStats();
+
+const spin = ora({ ...noStdin, text: "Syncing messages…" }).start();
+const sync = syncLog(db, (s) => { spin.text = `Syncing messages… ${s}`; });
+const existing = sync.updatedSessions - sync.newSessions;
+spin.succeed(`${sync.messages} new messages. ${sync.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`);
+
+// check Ollama reachability before attempting embeddings
+const ollamaOk = await fetch(`${OLLAMA_URL}/api/tags`).then(() => true).catch(() => false);
+if (!ollamaOk) {
+  ora(noStdin).fail(`Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`);
+} else {
+  const pending = db.prepare(`
+    SELECT count(DISTINCT l.session_id) as n
+    FROM log l
+    LEFT JOIN chunks c ON c.session_id = l.session_id
+    LEFT JOIN chunks_vec v ON v.rowid = c.id
+    WHERE l.text IS NOT NULL AND (c.id IS NULL OR v.rowid IS NULL)
+  `).get() as any;
+  const spin2 = ora({ ...noStdin, text: `Syncing embeddings… 0/${pending.n} sessions` }).start();
+  const embCount = await syncChunks(db, (s) => { lastProgress = s; spin2.text = `Syncing embeddings… ${s}`; });
+  lastProgress = "";
+  spin2.succeed(`${embCount} sessions embedded`);
+}

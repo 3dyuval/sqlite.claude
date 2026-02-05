@@ -3,72 +3,73 @@ import { Database } from "bun:sqlite";
 import * as sqliteVec from "sqlite-vec";
 import { join } from "path";
 import { homedir } from "os";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+import "./env.ts";
+
+const OLLAMA_URL = process.env.OLLAMA_URL;
+const EMBED_MODEL = process.env.EMBED_MODEL;
+
+if (!OLLAMA_URL || !EMBED_MODEL) {
+  console.error("Missing required env vars: OLLAMA_URL, EMBED_MODEL");
+  console.error("Set them in .env at project root or pass --env-file=path/to/.env");
+  process.exit(1);
+}
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR
   ? join(process.env.CLAUDE_CONFIG_DIR, "claude")
   : join(homedir(), ".claude");
 const DB_PATH = join(CLAUDE_DIR, "claude.sqlite");
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
 
-const usage = `sqlite.claude search — query your Claude Code conversation history
+// ── yargs CLI ────────────────────────────────────────────────────────
 
-Usage:
-  <script> dump [options]               Output conversation text (pipe-friendly)
-  <script> recent [options]             List recent sessions
-  <script> fts <query> [options]        Keyword search (FTS5)
-  <script> semantic <query> [options]   Similarity search (requires ollama)
-  <script> sql <query>                 Run raw SQL (sqlite-vec loaded)
+const sharedOpts = {
+  project: {
+    alias: "p",
+    type: "string" as const,
+    description: "Filter by project path (no value = cwd)",
+  },
+  days: {
+    alias: "d",
+    type: "number" as const,
+    description: "Only search last N days",
+  },
+  limit: {
+    alias: "l",
+    type: "number" as const,
+    default: 10,
+    description: "Max results",
+  },
+  session: {
+    alias: "s",
+    type: "string" as const,
+    description: "Drill into a specific session's messages",
+  },
+};
 
-Options:
-  --project [<glob>] Filter by project path (default: current directory)
-  --days <n>         Only search last N days
-  --limit <n>        Max results (default: 10)
-  --session <id>     Drill into a specific session's messages
-  -h, --help         Show this help
+const argv = await yargs(hideBin(process.argv))
+  .scriptName("search")
+  .usage("sqlite.claude search — query your Claude Code conversation history")
+  .command("dump", "Output conversation text (pipe-friendly)", sharedOpts)
+  .command("recent", "List recent sessions", sharedOpts)
+  .command("fts <query>", "Keyword search (FTS5)", sharedOpts)
+  .command("semantic <query>", "Similarity search (requires ollama)", sharedOpts)
+  .command("sql <query>", "Run raw SQL (sqlite-vec loaded)")
+  .demandCommand(1, "Please specify a command: dump, recent, fts, semantic, sql")
+  .completion()
+  .example("dump --project --days 1", "Dump recent project conversations")
+  .example('fts "authentication AND jwt"', "Full-text keyword search")
+  .example('semantic "how to debug memory leaks" --limit 5', "Similarity search")
+  .strict()
+  .help()
+  .parse();
 
-Examples:
-  <script> dump --project --days 1
-  <script> dump --project --days 7 | ollama run qwen2.5-coder:3b "Summarize:"
-  <script> recent --project --days 7
-  <script> fts "authentication AND jwt"
-  <script> fts "react" --project "/home/user/projects/*" --days 7
-  <script> semantic "how to debug memory leaks" --limit 5
-  <script> fts "" --session abc123-def456
-
-FTS5 query syntax: AND, OR, NOT, "exact phrase", prefix*`;
-
-// parse args
-const args = process.argv.slice(2);
-if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
-  console.log(usage);
-  process.exit(0);
-}
-const mode = args[0]!;
-
-if (mode !== "recent" && mode !== "dump" && mode !== "sql" && args.length < 2) {
-  console.log(usage);
-  process.exit(1);
-}
-
-const query = args[1] ?? "";
-let project: string | null = null;
-let days: number | null = null;
-let limit = 10;
-let sessionId: string | null = null;
-
-for (let i = 2; i < args.length; i++) {
-  switch (args[i]) {
-    case "--project": {
-      const next = args[i + 1];
-      project = (next && !next.startsWith("-")) ? args[++i]! : process.cwd();
-      break;
-    }
-    case "--days": days = parseInt(args[++i]!, 10); break;
-    case "--limit": limit = parseInt(args[++i]!, 10); break;
-    case "--session": sessionId = args[++i]!; break;
-  }
-}
+const mode = String(argv._[0]);
+const query = String(argv.query ?? "");
+const project: string | null = argv.project === true || argv.project === "" ? process.cwd() : (argv.project as string | undefined) ?? null;
+const days: number | null = (argv.days as number | undefined) ?? null;
+const limit: number = (argv.limit as number | undefined) ?? 10;
+const sessionId: string | null = (argv.session as string | undefined) ?? null;
 
 const db = new Database(DB_PATH);
 db.loadExtension(sqliteVec.getLoadablePath());
