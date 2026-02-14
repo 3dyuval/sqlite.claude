@@ -55,7 +55,8 @@ const argv = await yargs(hideBin(process.argv))
   .command("fts <query>", "Keyword search (FTS5)", sharedOpts)
   .command("semantic <query>", "Similarity search (requires ollama)", sharedOpts)
   .command("sql <query>", "Run raw SQL (sqlite-vec loaded)")
-  .demandCommand(1, "Please specify a command: dump, recent, fts, semantic, sql")
+  .command("list", "List all projects with session counts")
+  .demandCommand(1, "Please specify a command: dump, recent, fts, semantic, sql, list")
   .completion()
   .example("dump --project --days 1", "Dump recent project conversations")
   .example('fts "authentication AND jwt"', "Full-text keyword search")
@@ -208,8 +209,20 @@ if (mode === "dump") {
     console.log(vals.length === 1 ? vals[0] : vals.join("\t"));
   }
 
+} else if (mode === "list") {
+  const results = db.prepare(`
+    SELECT project, count(DISTINCT session_id) as sessions, count(*) as messages
+    FROM log
+    GROUP BY project
+    ORDER BY sessions DESC
+  `).all() as any[];
+  for (const r of results) {
+    console.log(`${r.sessions} sessions\t${r.messages} msgs\t${r.project}`);
+  }
+  console.log(`\n${results.length} projects`);
+
 } else {
-  console.error(`Unknown mode: ${mode}. Use 'recent', 'fts', 'semantic', or 'sql'.`);
+  console.error(`Unknown mode: ${mode}`);
   process.exit(1);
 }
 
