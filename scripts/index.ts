@@ -6,7 +6,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
 import ora from "ora";
-import "./env.ts";
+import { ollamaHeaders } from "./env.ts";
 
 const OLLAMA_URL = process.env.OLLAMA_URL;
 const EMBED_MODEL = process.env.EMBED_MODEL;
@@ -81,6 +81,7 @@ function sha256(text: string): string {
 async function embed(text: string): Promise<Float32Array> {
   const res = await fetch(`${OLLAMA_URL}/api/embed`, {
     method: "POST",
+    headers: ollamaHeaders,
     body: JSON.stringify({ model: EMBED_MODEL, input: text }),
   });
   if (!res.ok) throw new Error(`ollama embed failed: ${res.status}`);
@@ -392,7 +393,7 @@ const existing = sync.updatedSessions - sync.newSessions;
 spin.succeed(`${sync.messages} new messages. ${sync.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`);
 
 // check Ollama reachability before attempting embeddings
-const ollamaOk = await fetch(`${OLLAMA_URL}/api/tags`).then(() => true).catch(() => false);
+const ollamaOk = await fetch(`${OLLAMA_URL}/api/tags`, { headers: ollamaHeaders }).then(() => true).catch(() => false);
 if (!ollamaOk) {
   ora(noStdin).fail(`Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`);
 } else {

@@ -5,7 +5,7 @@ import { join } from "path";
 import { homedir } from "os";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import "./env.ts";
+import { ollamaHeaders } from "./env.ts";
 
 const OLLAMA_URL = process.env.OLLAMA_URL;
 const EMBED_MODEL = process.env.EMBED_MODEL;
@@ -163,6 +163,7 @@ if (mode === "dump") {
 } else if (mode === "semantic") {
   const resp = await fetch(`${OLLAMA_URL}/api/embed`, {
     method: "POST",
+    headers: ollamaHeaders,
     body: JSON.stringify({ model: EMBED_MODEL, input: query }),
   });
   if (!resp.ok) {
