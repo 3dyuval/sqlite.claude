@@ -1,6 +1,9 @@
 {
-  "name": "sqlite.claude",
-  "module": "index.ts",
+  "name": "claude-sql",
+  "module": "cli.ts",
+  "bin": {
+    "claude-sql": "cli.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -10,9 +13,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@types/yargs": "^17.0.35",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opencode-ai/plugin": "^1.2.16",
+    "citty": "^0.2.1",
     "ora": "^9.3.0",
     "sqlite-vec": "^0.1.7-alpha.2",
-    "yargs": "^18.0.0"
+    "ts-pattern": "^5.9.0"
   }
 }

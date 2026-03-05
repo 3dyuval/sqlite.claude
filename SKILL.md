@@ -1,36 +1,55 @@
 ---
 name: sqlite.claude
 description: This skill should be used when the user asks to "search conversation history", "find past sessions", "query claude logs", "what did I work on", "semantic search conversations", "find discussions about X", or needs to filter, analyze, or search Claude Code session history using SQLite. Also applies when the user mentions "claude.sqlite", "sync logs", or "embed conversations".
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Claude Code SQLite Log
 
 Query and search Claude Code conversation history via a denormalized SQLite database with full-text search and vector embeddings.
 
+## Install
+
+```bash
+cd <skill_base_dir>/scripts
+bun install
+bun link    # installs `claude-sql` globally
+```
+
+## CLI
+
+All commands are available via `claude-sql`:
+
+```bash
+claude-sql sync                  # ingest transcripts + embed chunks
+claude-sql dump [--project] [--days <n>]
+claude-sql recent [--project] [--days <n>] [--limit <n>]
+claude-sql fts "<query>" [--project <glob>] [--days <n>]
+claude-sql semantic "<query>" [--project <glob>] [--days <n>]
+claude-sql sql "<query>"
+```
+
 ## Architecture
 
-The system has three components:
-
-1. **Sync script** (`<skill_base_dir>/scripts/index.ts`) — ingests JSONL transcripts into SQLite, append-only with mtime tracking
-2. **Search CLI** (`<skill_base_dir>/scripts/search.ts`) — keyword and semantic search with filters
-3. **SQLite database** (`~/.claude/claude.sqlite`) — the query target, three layers of access
+1. **Sync** (`claude-sql sync`) — ingests JSONL transcripts into SQLite, append-only with mtime tracking
+2. **Search** (`claude-sql <command>`) — keyword and semantic search with filters
+3. **SQLite database** (`~/.claude/claude.sqlite`) — three layers: messages, FTS, vectors
 
 ### Database Location
 
 Resolves via `$CLAUDE_CONFIG_DIR/claude/claude.sqlite`, falling back to `~/.claude/claude.sqlite`.
 
-## Syncing
+## Configuration
 
-Before querying, ensure the database is up to date:
+Set in `<skill_base_dir>/.env` (see `.env.example`):
 
-```bash
-bun run <skill_base_dir>/scripts/index.ts
-```
-
-The sync is incremental — tracks file mtime/size in a `sync_state` table, only re-ingests changed transcript files. Embedding requires ollama running with `nomic-embed-text`.
-
-Override defaults with env vars: `OLLAMA_URL`, `EMBED_MODEL`.
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint |
+| `OLLAMA_HEADERS` | _(empty)_ | Extra headers as `Key:Value,Key:Value` (e.g. CF Access tokens) |
+| `EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
+| `EMBED_DIM` | `768` | Embedding dimension |
+| `CHUNK_SIZE` | `1000` | Max chars per chunk (smaller = more precise search) |
 
 ## Schema
 
@@ -42,7 +61,7 @@ Every user/assistant message with session context inlined. No joins needed.
 |---|---|---|
 | `id` | INTEGER | autoincrement PK |
 | `session_id` | TEXT | session UUID |
-| `project` | TEXT | absolute project path (e.g. `/home/user/projects/myapp`) |
+| `project` | TEXT | absolute project path |
 | `display` | TEXT | initial user prompt for the session |
 | `uuid` | TEXT | message UUID |
 | `parent_uuid` | TEXT | parent message UUID |
@@ -66,120 +85,55 @@ WHERE log_fts MATCH 'authentication AND jwt'
   AND l.timestamp > strftime('%s','now','-7 days') * 1000;
 ```
 
-### `chunks` table — conversation summaries
+### `chunks` table — conversation segments
 
-One row per session. Concatenated user+assistant text (tool-only messages excluded), capped at 8000 chars.
+Multiple chunks per session. Each chunk is a segment of the conversation (~`CHUNK_SIZE` chars), with its own timestamp range from the messages it contains.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | INTEGER | autoincrement PK, used as rowid in `chunks_vec` |
-| `session_id` | TEXT | session UUID (UNIQUE) |
+| `session_id` | TEXT | session UUID |
+| `chunk_index` | INTEGER | position within session (0-based) |
 | `project` | TEXT | project path |
-| `text` | TEXT | concatenated conversation text |
+| `text` | TEXT | conversation segment text |
 | `hash` | TEXT | sha256 of chunk text |
-| `ts_start` | INTEGER | first message timestamp (unix ms) |
-| `ts_end` | INTEGER | last message timestamp (unix ms) |
+| `ts_start` | INTEGER | first message timestamp in this chunk (unix ms) |
+| `ts_end` | INTEGER | last message timestamp in this chunk (unix ms) |
+
+UNIQUE constraint on `(session_id, chunk_index)`.
 
 ### `chunks_vec` — vector embeddings (sqlite-vec)
 
-768-dim float vectors from `nomic-embed-text` via ollama. Rowid matches `chunks.id`.
+768-dim float vectors from `nomic-embed-text` via Ollama. Rowid matches `chunks.id`.
 
 ## Query Patterns
 
 ### Filtering by project path
 
-Use SQLite `GLOB` for path matching — it supports `*` and `**` style wildcards:
-
 ```sql
--- exact project
 WHERE project = '/home/user/projects/myapp'
-
--- all subprojects under projects/
 WHERE project GLOB '/home/user/projects/*'
-
--- all config-related projects
-WHERE project GLOB '/home/user/.config/*'
 ```
 
 ### Filtering by time range
 
-Timestamps are unix milliseconds. Convert relative dates:
+Timestamps are unix milliseconds:
 
 ```sql
--- last 7 days
 WHERE timestamp > (strftime('%s','now','-7 days') * 1000)
-
--- last 30 days
-WHERE timestamp > (strftime('%s','now','-30 days') * 1000)
-
--- specific range
-WHERE timestamp BETWEEN 1706745600000 AND 1707350400000
-
--- human-readable in output
 SELECT datetime(timestamp/1000, 'unixepoch', 'localtime') as time, ...
-```
-
-### Dump conversation text (CLI)
-
-Outputs raw `role: text` lines, pipe-friendly for summarization or export.
-
-```bash
-# today's text for current project
-bun <skill_base_dir>/scripts/search.ts dump --project --days 1
-
-# pipe to ollama for summarization
-bun <skill_base_dir>/scripts/search.ts dump --project --days 1 | ollama run qwen2.5-coder:3b "Summarize:"
-
-# last 7 days, all projects
-bun <skill_base_dir>/scripts/search.ts dump --days 7
-```
-
-### List recent sessions (CLI)
-
-```bash
-# recent sessions across all projects
-bun <skill_base_dir>/scripts/search.ts recent
-
-# recent sessions for current project
-bun <skill_base_dir>/scripts/search.ts recent --project --days 7
-```
-
-### Full-text search (CLI)
-
-```bash
-# keyword search
-bun <skill_base_dir>/scripts/search.ts fts "typescript AND react"
-
-# with filters
-bun <skill_base_dir>/scripts/search.ts fts "authentication" --project "/home/user/projects/*" --days 30 --limit 20
-```
-
-FTS5 query syntax: `AND`, `OR`, `NOT`, phrase queries (`"exact phrase"`), prefix queries (`react*`).
-
-### Semantic search (CLI)
-
-Requires ollama running with `nomic-embed-text`.
-
-```bash
-# semantic similarity search
-bun <skill_base_dir>/scripts/search.ts semantic "debugging memory leaks"
-
-# with filters
-bun <skill_base_dir>/scripts/search.ts semantic "browser automation testing" --project "/home/user/projects/*" --days 7
 ```
 
 ### Drill into a session
 
-Use the `session_id` from search results to see full messages:
-
 ```bash
-bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>
+claude-sql fts "" --session <session_id>
 ```
 
 ### Useful aggregate queries
 
 ```sql
--- sessions per project, sorted by activity
+-- sessions per project
 SELECT project, count(DISTINCT session_id) as sessions, count(*) as messages
 FROM log GROUP BY project ORDER BY messages DESC;
 
@@ -193,14 +147,3 @@ GROUP BY tool ORDER BY uses DESC;
 SELECT date(timestamp/1000, 'unixepoch', 'localtime') as day, count(*) as msgs
 FROM log GROUP BY day ORDER BY day DESC LIMIT 14;
 ```
-
-## Workflow
-
-1. Sync: `bun run <skill_base_dir>/scripts/index.ts`
-2. Dump text: `bun <skill_base_dir>/scripts/search.ts dump [--project] [--days <n>]`
-3. Recent activity: `bun <skill_base_dir>/scripts/search.ts recent [--project] [--days <n>] [--limit <n>]`
-4. Keyword search: `bun <skill_base_dir>/scripts/search.ts fts "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
-5. Semantic search: `bun <skill_base_dir>/scripts/search.ts semantic "<query>" [--project <glob>] [--days <n>] [--limit <n>]`
-6. Drill into session: `bun <skill_base_dir>/scripts/search.ts fts "" --session <session_id>`
-7. Raw SQL: `bun <skill_base_dir>/scripts/search.ts sql "<query>"`
-8. For complex/aggregate queries, use `sqlite3 ~/.claude/claude.sqlite` directly with the schema above
