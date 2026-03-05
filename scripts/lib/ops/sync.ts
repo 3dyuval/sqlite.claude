@@ -135,16 +135,20 @@ function syncLog(db: Database, onProgress?: (msg: string) => void) {
 async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
   const sessions = db
     .prepare(
-      `SELECT l.session_id, l.project
-       FROM log l
-       LEFT JOIN chunks c ON c.session_id = l.session_id
-       LEFT JOIN chunks_vec v ON v.rowid = c.id
-       WHERE l.text IS NOT NULL
-       GROUP BY l.session_id
-       HAVING c.id IS NULL OR v.rowid IS NULL`,
+      `SELECT session_id, project FROM (
+        SELECT DISTINCT l.session_id, l.project
+        FROM log l
+        LEFT JOIN chunks c ON c.session_id = l.session_id
+        WHERE l.text IS NOT NULL AND c.id IS NULL
+        UNION
+        SELECT DISTINCT c.session_id, c.project
+        FROM chunks c
+        WHERE c.id NOT IN (SELECT rowid FROM chunks_vec)
+      )`,
     )
     .all() as any[];
 
+  console.debug("[syncChunks] found", sessions.length, "sessions needing chunks/vectors");
   if (!sessions.length) {
     onProgress?.(`0 sessions`);
     return 0;
@@ -175,6 +179,7 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
   let bytesEmbedded = 0;
   for (const session of sessions) {
     const rows = getMessages.all(session.session_id) as any[];
+    console.debug("[syncChunks] session", session.session_id, "rows:", rows.length);
     if (!rows.length) continue;
 
     let i = 0;
@@ -198,6 +203,7 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
         .get(session.session_id, i) as any;
 
       try {
+        console.debug("[syncChunks] embedding chunk", i, "len:", chunk.text.length);
         const vec = await embed(chunk.text);
         const existing = hasVec.get(chunkRow.id);
         if (existing) {
@@ -218,8 +224,10 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
       i++;
     }
 
+    console.debug("[syncChunks] session done, total chunks:", i);
     deleteOldChunks.run(session.session_id, i);
   }
+  console.debug("[syncChunks] all done, embedded:", embedded);
   return embedded;
 }
 
@@ -266,26 +274,35 @@ export async function sync(db: Database): Promise<Result> {
     `${syncResult.messages} new messages. ${syncResult.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`,
   );
 
+  console.debug("[sync] checking ollama at", OLLAMA_URL);
   const ollamaOk = await fetch(`${OLLAMA_URL}/api/tags`, {
     headers: ollamaHeaders,
   })
     .then(() => true)
     .catch(() => false);
+  console.debug("[sync] ollama reachable:", ollamaOk);
   if (!ollamaOk) {
     ora(noStdin).fail(
       `Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`,
     );
     lines.push(`Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`);
   } else {
+    console.debug("[sync] querying pending count...");
     const pending = db
       .prepare(`
-      SELECT count(DISTINCT l.session_id) as n
-      FROM log l
-      LEFT JOIN chunks c ON c.session_id = l.session_id
-      LEFT JOIN chunks_vec v ON v.rowid = c.id
-      WHERE l.text IS NOT NULL AND (c.id IS NULL OR v.rowid IS NULL)
+      SELECT count(DISTINCT session_id) as n FROM (
+        SELECT DISTINCT l.session_id
+        FROM log l
+        LEFT JOIN chunks c ON c.session_id = l.session_id
+        WHERE l.text IS NOT NULL AND c.id IS NULL
+        UNION
+        SELECT DISTINCT c.session_id
+        FROM chunks c
+        WHERE c.id NOT IN (SELECT rowid FROM chunks_vec)
+      )
     `)
       .get() as any;
+    console.debug("[sync] pending sessions:", pending.n);
     const spin2 = ora({
       ...noStdin,
       text: `Syncing embeddings… 0/${pending.n} sessions`,
@@ -294,6 +311,7 @@ export async function sync(db: Database): Promise<Result> {
       lastProgress = s;
       spin2.text = `Syncing embeddings… ${s}`;
     });
+    console.debug("[sync] embedding done:", embCount);
     spin2.succeed(`${embCount} chunks embedded`);
     lines.push(`${embCount} chunks embedded`);
   }
