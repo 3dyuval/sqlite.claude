@@ -20,8 +20,7 @@ export const CHUNK_SIZE = Number(process.env.CHUNK_SIZE || 1000);
 
 // ── paths ─────────────────────────────────────────────────────────────
 export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR
-  ? join(process.env.CLAUDE_CONFIG_DIR, "claude")
-  : join(homedir(), ".config", "claude");
+  ?? join(homedir(), ".config", "claude");
 export const HISTORY_FILE = join(CLAUDE_DIR, "history.jsonl");
 export const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
 export const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "..", "claude.sqlite");
