@@ -179,7 +179,6 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
   let bytesEmbedded = 0;
   for (const session of sessions) {
     const rows = getMessages.all(session.session_id) as any[];
-    console.debug("[syncChunks] session", session.session_id, "rows:", rows.length);
     if (!rows.length) continue;
 
     let i = 0;
@@ -273,18 +272,15 @@ export async function sync(db: Database): Promise<Result> {
     `${syncResult.messages} new messages. ${syncResult.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`,
   );
 
-  console.debug("[sync] checking inference server at", EMBED_BASE_URL);
   const serverOk = await fetch(`${EMBED_BASE_URL}/v1/models`, {
     headers: apiHeaders,
   })
     .then((r) => r.ok)
     .catch(() => false);
-  console.debug("[sync] inference server reachable:", serverOk);
   if (!serverOk) {
     ora(noStdin).fail(`Cannot reach inference server at ${EMBED_BASE_URL}`);
     lines.push(`Cannot reach inference server at ${EMBED_BASE_URL}`);
   } else {
-    console.debug("[sync] querying pending count...");
     const pending = db
       .prepare(`
       SELECT count(DISTINCT session_id) as n FROM (
@@ -299,7 +295,6 @@ export async function sync(db: Database): Promise<Result> {
       )
     `)
       .get() as any;
-    console.debug("[sync] pending sessions:", pending.n);
     const spin2 = ora({
       ...noStdin,
       text: `Syncing embeddings… 0/${pending.n} sessions`,
@@ -308,7 +303,6 @@ export async function sync(db: Database): Promise<Result> {
       lastProgress = s;
       spin2.text = `Syncing embeddings… ${s}`;
     });
-    console.debug("[sync] embedding done:", embCount);
     spin2.succeed(`${embCount} chunks embedded`);
     lines.push(`${embCount} chunks embedded`);
   }
