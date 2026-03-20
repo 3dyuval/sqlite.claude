@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { ollamaHeaders, OLLAMA_URL, EMBED_MODEL } from "./env.ts";
+import { apiHeaders, EMBED_BASE_URL, EMBED_MODEL } from "./env.ts";
 
 export function extractText(content: any): string {
   if (typeof content === "string") return content;
@@ -38,12 +38,12 @@ export function sha256(text: string): string {
 }
 
 export async function embed(text: string): Promise<Float32Array> {
-  const res = await fetch(`${OLLAMA_URL}/api/embed`, {
+  const res = await fetch(`${EMBED_BASE_URL}/v1/embeddings`, {
     method: "POST",
-    headers: ollamaHeaders,
+    headers: apiHeaders,
     body: JSON.stringify({ model: EMBED_MODEL, input: text }),
   });
-  if (!res.ok) throw new Error(`ollama embed failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`embed failed: ${res.status} ${await res.text()}`);
   const json = (await res.json()) as any;
-  return new Float32Array(json.embeddings[0]);
+  return new Float32Array(json.data[0].embedding);
 }

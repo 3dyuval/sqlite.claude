@@ -1,12 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { ollamaHeaders, OLLAMA_URL, EMBED_MODEL } from "../env.ts";
-import {
-  type Result,
-  type SearchOpts,
-  ok,
-  envError,
-  ollamaUnreachable,
-} from "../types.ts";
+import { EMBED_BASE_URL, EMBED_MODEL } from "../env.ts";
+import { type Result, type SearchOpts, ok, envError, inferenceUnreachable } from "../types.ts";
+import { embed } from "../utils.ts";
 
 export async function semantic(
   db: Database,
@@ -14,22 +9,18 @@ export async function semantic(
   opts: SearchOpts,
 ): Promise<Result> {
   const missing: string[] = [];
-  if (!OLLAMA_URL) missing.push("OLLAMA_URL");
+  if (!EMBED_BASE_URL) missing.push("EMBED_BASE_URL");
   if (!EMBED_MODEL) missing.push("EMBED_MODEL");
   if (missing.length) return envError(missing);
 
   const { project, days, limit = 10 } = opts;
 
-  const resp = await fetch(`${OLLAMA_URL}/api/embed`, {
-    method: "POST",
-    headers: ollamaHeaders,
-    body: JSON.stringify({ model: EMBED_MODEL, input: query }),
-  }).catch(() => null);
-
-  if (!resp || !resp.ok) return ollamaUnreachable(OLLAMA_URL!);
-
-  const json = (await resp.json()) as any;
-  const queryVec = new Float32Array(json.embeddings[0]);
+  let queryVec: Float32Array;
+  try {
+    queryVec = await embed(query);
+  } catch {
+    return inferenceUnreachable(EMBED_BASE_URL!);
+  }
 
   const wheres: string[] = [];
   const params: any[] = [];

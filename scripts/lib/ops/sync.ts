@@ -3,8 +3,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import ora from "ora";
 import {
-  ollamaHeaders,
-  OLLAMA_URL,
+  apiHeaders,
+  EMBED_BASE_URL,
   EMBED_DIM,
   CHUNK_SIZE,
   HISTORY_FILE,
@@ -19,7 +19,7 @@ import {
   sha256,
   embed,
 } from "../utils.ts";
-import { type Result, ok, envError, ollamaUnreachable } from "../types.ts";
+import { type Result, ok, envError, inferenceUnreachable } from "../types.ts";
 
 function readJsonl(path: string): any[] {
   if (!existsSync(path)) return [];
@@ -233,9 +233,8 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
 
 export async function sync(db: Database): Promise<Result> {
   const missing: string[] = [];
-  if (!OLLAMA_URL) missing.push("OLLAMA_URL");
+  if (!EMBED_BASE_URL) missing.push("EMBED_BASE_URL");
   if (!process.env.EMBED_MODEL) missing.push("EMBED_MODEL");
-  if (!EMBED_DIM) missing.push("EMBED_DIM");
   if (missing.length) return envError(missing);
 
   const noStdin = { discardStdin: false };
@@ -257,7 +256,7 @@ export async function sync(db: Database): Promise<Result> {
       `${stats.messages} messages, ${stats.sessions} sessions, ${stats.chunks} chunks, ${stats.vectors} vectors`,
     );
     if (m > 0)
-      lines.push(`! ${m} chunks missing embeddings. Re-run with Ollama`);
+      lines.push(`! ${m} chunks missing embeddings. Re-run with inference server running`);
   };
 
   printStats();
@@ -274,18 +273,16 @@ export async function sync(db: Database): Promise<Result> {
     `${syncResult.messages} new messages. ${syncResult.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`,
   );
 
-  console.debug("[sync] checking ollama at", OLLAMA_URL);
-  const ollamaOk = await fetch(`${OLLAMA_URL}/api/tags`, {
-    headers: ollamaHeaders,
+  console.debug("[sync] checking inference server at", EMBED_BASE_URL);
+  const serverOk = await fetch(`${EMBED_BASE_URL}/v1/models`, {
+    headers: apiHeaders,
   })
-    .then(() => true)
+    .then((r) => r.ok)
     .catch(() => false);
-  console.debug("[sync] ollama reachable:", ollamaOk);
-  if (!ollamaOk) {
-    ora(noStdin).fail(
-      `Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`,
-    );
-    lines.push(`Cannot reach Ollama at ${OLLAMA_URL}. Run: ollama serve`);
+  console.debug("[sync] inference server reachable:", serverOk);
+  if (!serverOk) {
+    ora(noStdin).fail(`Cannot reach inference server at ${EMBED_BASE_URL}`);
+    lines.push(`Cannot reach inference server at ${EMBED_BASE_URL}`);
   } else {
     console.debug("[sync] querying pending count...");
     const pending = db
