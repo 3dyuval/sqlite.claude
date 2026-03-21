@@ -45,7 +45,7 @@ export async function fts(
     ORDER BY l.timestamp DESC
     LIMIT ?
   `)
-    .all(query, ...params, limit) as any[];
+    .all(query.trim().split(/\s+/).map(t => `"${t.replace(/"/g, '""')}"`).join(' '), ...params, limit) as any[];
 
   const lines: string[] = [];
   for (const r of results) {
