@@ -1,3 +1,5 @@
 scripts/claude.sqlite
+scripts/claude.sqlite-shm
+scripts/claude.sqlite-wal
 scripts/node_modules/
 node_modules/
