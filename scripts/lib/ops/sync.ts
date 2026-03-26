@@ -7,6 +7,7 @@ import {
   EMBED_BASE_URL,
   EMBED_DIM,
   CHUNK_SIZE,
+  MIN_CHUNK_TOKENS,
   HISTORY_FILE,
   PROJECTS_DIR,
 } from "../env.ts";
@@ -136,11 +137,17 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
   const sessions = db
     .prepare(
       `SELECT session_id, project FROM (
-        SELECT DISTINCT l.session_id, l.project
+        -- sessions with log entries but no chunks (only if enough text to chunk)
+        SELECT l.session_id, l.project
         FROM log l
         LEFT JOIN chunks c ON c.session_id = l.session_id
         WHERE l.text IS NOT NULL AND c.id IS NULL
+          AND l.role IN ('user','assistant')
+          AND (l.tools IS NULL OR l.tools = '[]')
+        GROUP BY l.session_id
+        HAVING sum(length(l.text)) >= ${Math.floor(MIN_CHUNK_TOKENS * 3.5)}
         UNION
+        -- chunks missing their embedding vector
         SELECT DISTINCT c.session_id, c.project
         FROM chunks c
         WHERE c.id NOT IN (SELECT rowid FROM chunks_vec)
@@ -182,7 +189,7 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
     if (!rows.length) continue;
 
     let i = 0;
-    for (const chunk of chunkMessages(rows, CHUNK_SIZE)) {
+    for (const chunk of chunkMessages(rows, CHUNK_SIZE, MIN_CHUNK_TOKENS)) {
       const hash = sha256(chunk.text);
 
       insertChunk.run(
@@ -284,10 +291,14 @@ export async function sync(db: Database): Promise<Result> {
     const pending = db
       .prepare(`
       SELECT count(DISTINCT session_id) as n FROM (
-        SELECT DISTINCT l.session_id
+        SELECT l.session_id
         FROM log l
         LEFT JOIN chunks c ON c.session_id = l.session_id
         WHERE l.text IS NOT NULL AND c.id IS NULL
+          AND l.role IN ('user','assistant')
+          AND (l.tools IS NULL OR l.tools = '[]')
+        GROUP BY l.session_id
+        HAVING sum(length(l.text)) >= ${Math.floor(MIN_CHUNK_TOKENS * 3.5)}
         UNION
         SELECT DISTINCT c.session_id
         FROM chunks c

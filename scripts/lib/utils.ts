@@ -37,13 +37,24 @@ export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export async function embed(text: string): Promise<Float32Array> {
+async function embedWithBudget(text: string, tokens: number): Promise<Float32Array> {
+  const input = text.slice(0, Math.floor(tokens * 3.5));
   const res = await fetch(`${EMBED_BASE_URL}/v1/embeddings`, {
     method: "POST",
     headers: apiHeaders,
-    body: JSON.stringify({ model: EMBED_MODEL, input: text }),
+    body: JSON.stringify({ model: EMBED_MODEL, input }),
   });
-  if (!res.ok) throw new Error(`embed failed: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as any;
-  return new Float32Array(json.data[0].embedding);
+  if (res.ok) {
+    const json = (await res.json()) as any;
+    return new Float32Array(json.data[0].embedding);
+  }
+  const body = await res.text();
+  if (res.status === 500 && body.includes("too large") && tokens > 64)
+    return embedWithBudget(text, tokens - 64);
+  throw new Error(`embed failed: ${res.status} ${body}`);
+}
+
+// JSC (Bun) supports TCO so this tail-recurses properly, though async await limits the gain
+export function embed(text: string, maxTokens = 512): Promise<Float32Array> {
+  return embedWithBudget(text, maxTokens);
 }

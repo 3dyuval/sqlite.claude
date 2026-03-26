@@ -13,6 +13,7 @@ export interface Chunk {
 export function* chunkMessages(
   messages: Message[],
   maxLen: number,
+  minTokens: number,
 ): Generator<Chunk> {
   let text = "";
   let tsStart: number | null = null;
@@ -35,7 +36,7 @@ export function* chunkMessages(
     }
   }
 
-  if (text.length >= 50) {
+  if (text.length >= Math.floor(minTokens * 3.5)) {
     yield { text: text.trimEnd(), ts_start: tsStart, ts_end: tsEnd };
   }
 }
