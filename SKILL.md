@@ -24,15 +24,14 @@ All commands are available via `claude-sql`:
 claude-sql sync                  # ingest transcripts + embed chunks
 claude-sql dump [--project] [--days <n>]
 claude-sql recent [--project] [--days <n>] [--limit <n>]
-claude-sql fts "<query>" [--project <glob>] [--days <n>]
-claude-sql semantic "<query>" [--project <glob>] [--days <n>]
+claude-sql search "<query>" [--semantic] [--project <glob>] [--days <n>] [--session <id>]
 claude-sql sql "<query>"
 ```
 
 ## Architecture
 
 1. **Sync** (`claude-sql sync`) — ingests JSONL transcripts into SQLite, append-only with mtime tracking
-2. **Search** (`claude-sql <command>`) — keyword and semantic search with filters
+2. **Search** (`claude-sql search`) — keyword by default, `--semantic` for similarity, with filters
 3. **SQLite database** (`~/.claude/claude.sqlite`) — three layers: messages, FTS, vectors
 
 ### Database Location
@@ -127,7 +126,7 @@ SELECT datetime(timestamp/1000, 'unixepoch', 'localtime') as time, ...
 ### Drill into a session
 
 ```bash
-claude-sql fts "" --session <session_id>
+claude-sql search "" --session <session_id>
 ```
 
 ### Useful aggregate queries

@@ -95,36 +95,25 @@ const main = defineCommand({
         handleResult(await withDb((db) => recent(db, parseOpts(args))));
       },
     }),
-    fts: defineCommand({
-      meta: { description: "Keyword search (FTS5)" },
+    search: defineCommand({
+      meta: { description: "Search history (keyword by default, --semantic for similarity)" },
       args: {
         query: {
           type: "positional",
-          description: "FTS5 search query",
+          description: "Search query",
           required: true,
+        },
+        semantic: {
+          type: "boolean",
+          alias: "S",
+          description: "Similarity search via embeddings (requires inference server)",
         },
         ...searchArgs,
       },
       async run({ args }) {
-        handleResult(
-          await withDb((db) => fts(db, args.query, parseOpts(args))),
-        );
-      },
-    }),
-    semantic: defineCommand({
-      meta: { description: "Similarity search (requires ollama)" },
-      args: {
-        query: {
-          type: "positional",
-          description: "Natural language search query",
-          required: true,
-        },
-        ...searchArgs,
-      },
-      async run({ args }) {
-        handleResult(
-          await withDb((db) => semantic(db, args.query, parseOpts(args))),
-        );
+        const opts = parseOpts(args);
+        const op = args.semantic && !opts.session ? semantic : fts;
+        handleResult(await withDb((db) => op(db, args.query, opts)));
       },
     }),
     dump: defineCommand({
