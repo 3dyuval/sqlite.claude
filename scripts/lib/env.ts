@@ -42,4 +42,7 @@ export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR
   ?? join(homedir(), ".config", "claude");
 export const HISTORY_FILE = join(CLAUDE_DIR, "history.jsonl");
 export const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
-export const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "..", "claude.sqlite");
+
+export const DATA_DIR = process.env.SQLITE_CLAUDE_DATA_DIR
+  ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "claude-sql");
+export const DB_PATH = process.env.DB_PATH ?? join(DATA_DIR, "claude.sqlite");

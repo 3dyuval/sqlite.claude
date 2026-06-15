@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "fs";
+import { dirname } from "path";
 import * as sqliteVec from "sqlite-vec";
 import { EMBED_DIM, DB_PATH } from "./env.ts";
 import { type Result, dbError } from "./types.ts";
@@ -69,6 +71,7 @@ function ensureSchema(db: Database) {
 
 export function getDb(): Database | Result {
   try {
+    mkdirSync(dirname(DB_PATH), { recursive: true });
     const db = new Database(DB_PATH);
     db.loadExtension(sqliteVec.getLoadablePath());
     ensureSchema(db);
