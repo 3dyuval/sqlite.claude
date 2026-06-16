@@ -10,6 +10,7 @@ import {
   MIN_CHUNK_TOKENS,
   HISTORY_FILE,
   PROJECTS_DIR,
+  requireEmbedConfig,
 } from "../env.ts";
 import { chunkMessages } from "../chunks.ts";
 import {
@@ -20,7 +21,7 @@ import {
   sha256,
   embed,
 } from "../utils.ts";
-import { type Result, ok, envError, inferenceUnreachable } from "../types.ts";
+import { type Result, ok, inferenceUnreachable } from "../types.ts";
 
 function readJsonl(path: string): any[] {
   if (!existsSync(path)) return [];
@@ -238,10 +239,8 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
 }
 
 export async function sync(db: Database): Promise<Result> {
-  const missing: string[] = [];
-  if (!EMBED_BASE_URL) missing.push("EMBED_BASE_URL");
-  if (!process.env.EMBED_MODEL) missing.push("EMBED_MODEL");
-  if (missing.length) return envError(missing);
+  const configError = requireEmbedConfig();
+  if (configError) return configError;
 
   const noStdin = { discardStdin: false };
   const lines: string[] = [];

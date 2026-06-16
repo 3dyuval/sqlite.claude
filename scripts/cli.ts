@@ -56,12 +56,12 @@ function handleResult(result: Result) {
       console.log(data);
     })
     .with({ type: "env-error" }, ({ missing }) => {
-      console.error(`Missing env vars: ${missing.join(", ")}`);
-      console.error("Set them in .env or pass --env-file=path/to/.env");
+      console.error(`Missing config: ${missing.join(", ")}`);
+      console.error("Set them as env vars or in your config dir's local.toml");
       process.exit(1);
     })
-    .with({ type: "ollama-unreachable" }, ({ url }) => {
-      console.error(`Cannot reach Ollama at ${url}. Run: ollama serve`);
+    .with({ type: "inference-unreachable" }, ({ url }) => {
+      console.error(`Cannot reach inference server at ${url}`);
       process.exit(1);
     })
     .with({ type: "db-error" }, ({ error }) => {

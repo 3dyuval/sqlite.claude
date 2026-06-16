@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { EMBED_BASE_URL, EMBED_MODEL } from "../env.ts";
-import { type Result, type SearchOpts, ok, envError, inferenceUnreachable } from "../types.ts";
+import { EMBED_BASE_URL, requireEmbedConfig } from "../env.ts";
+import { type Result, type SearchOpts, ok, inferenceUnreachable } from "../types.ts";
 import { embed } from "../utils.ts";
 
 export async function semantic(
@@ -8,10 +8,8 @@ export async function semantic(
   query: string,
   opts: SearchOpts,
 ): Promise<Result> {
-  const missing: string[] = [];
-  if (!EMBED_BASE_URL) missing.push("EMBED_BASE_URL");
-  if (!EMBED_MODEL) missing.push("EMBED_MODEL");
-  if (missing.length) return envError(missing);
+  const configError = requireEmbedConfig();
+  if (configError) return configError;
 
   const { project, days, limit = 10 } = opts;
 

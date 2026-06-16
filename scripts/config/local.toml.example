@@ -1,0 +1,23 @@
+# claude-sql user config. Copy to local.toml in your config dir to override
+# config/default.js. Resolution per key: env var > local.toml > default.js.
+#
+# Config dir: $SQLITE_CLAUDE_CONFIG_DIR, else $XDG_CONFIG_HOME/claude-sql (if it
+# exists), else the skill's bundled config dir.
+
+# OpenAI-compat inference server ROOT (not a path); code appends /v1/...
+embedBaseUrl = "http://localhost:8080"
+embedModel = "nomic-embed-text"
+
+# embedDim = 768
+# chunkSize = 1000
+# minChunkTokens = 100
+
+# Extra request headers, "Key:Value,Key:Value".
+# aiHeaders = "CF-Access-Client-Id:xxx,CF-Access-Client-Secret:yyy"
+
+# Source transcripts dir (default ~/.config/claude).
+# claudeDir = "/home/you/.config/claude"
+
+# Shared DB (default $XDG_DATA_HOME/claude-sql).
+# dataDir = "/home/you/.local/share/claude-sql"
+# dbPath = "/home/you/.local/share/claude-sql/claude.sqlite"
