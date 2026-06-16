@@ -17,15 +17,6 @@ type Get = <T>(key: string) => T | undefined;
 
 const get: Get = (key) => (config.has(key) ? config.get(key) : undefined);
 
-/*
-* How it works:
-* node-config scans NODE_CONFIG_DIR and auto-loads files by reserved names in a fixed precedence order. custom-environment-variables.{js,json,json5,...} is one of those reserved names.
-* When present, node-config treats its contents not as config values but as a map of configKey → ENV_VAR_NAME. At load time it reads those env vars and overlays any that are set on top of everything else.
-* It sits at the top of the precedence chain - above local.*, above default.* - which is exactly why env vars win over your local.toml.
-* The full load order (low → high) node-config uses:
-* default.*  →  {NODE_ENV}.*  →  local.*  →  custom-environment-variables.*
-/*
-*
 export const EMBED_BASE_URL = get<string>("embedBaseUrl");
 export const EMBED_MODEL = get<string>("embedModel");
 export const EMBED_DIM = Number(get<number | string>("embedDim") ?? 768);
