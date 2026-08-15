@@ -11,7 +11,7 @@ module.exports = function ({ defer }) {
     embedDim: 768,
     chunkSize: 1000,
     minChunkTokens: 100,
-    aiHeaders: process.env.OLLAMA_HEADERS ?? "",
+    openaiApiKey: undefined,
 
     claudeDir: join(xdgConfig, "claude"),
     historyFile: defer((cfg) => join(cfg.claudeDir, "history.jsonl")),

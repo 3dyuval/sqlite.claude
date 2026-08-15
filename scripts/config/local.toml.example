@@ -12,8 +12,8 @@ embedModel = "nomic-embed-text"
 # chunkSize = 1000
 # minChunkTokens = 100
 
-# Extra request headers, "Key:Value,Key:Value".
-# aiHeaders = "CF-Access-Client-Id:xxx,CF-Access-Client-Secret:yyy"
+# API key for the inference server; sent as "Authorization: Bearer <key>".
+# openaiApiKey = "sk-..."
 
 # Source transcripts dir (default ~/.config/claude).
 # claudeDir = "/home/you/.config/claude"

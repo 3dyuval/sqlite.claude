@@ -30,12 +30,10 @@ export const PROJECTS_DIR = get<string>("projectsDir")!;
 export const DATA_DIR = get<string>("dataDir")!;
 export const DB_PATH = get<string>("dbPath")!;
 
+export const OPENAI_API_KEY = get<string>("openaiApiKey");
+
 export const apiHeaders: Record<string, string> = { "Content-Type": "application/json" };
-const raw = get<string>("aiHeaders") ?? "";
-for (const pair of raw.split(",")) {
-  const i = pair.indexOf(":");
-  if (i > 0) apiHeaders[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
-}
+if (OPENAI_API_KEY) apiHeaders["Authorization"] = `Bearer ${OPENAI_API_KEY}`;
 
 export function requireEmbedConfig(): Result | null {
   const missing: string[] = [];
