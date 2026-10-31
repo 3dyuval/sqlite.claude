@@ -18,6 +18,7 @@ import {
   extractTools,
   tsToUnix,
   fmtSize,
+  bar,
   sha256,
   embed,
 } from "../utils.ts";
@@ -156,7 +157,6 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
     )
     .all() as any[];
 
-  console.debug("[syncChunks] found", sessions.length, "sessions needing chunks/vectors");
   if (!sessions.length) {
     onProgress?.(`0 sessions`);
     return 0;
@@ -185,7 +185,9 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
 
   let embedded = 0;
   let bytesEmbedded = 0;
+  let sessionNum = 0;
   for (const session of sessions) {
+    sessionNum++;
     const rows = getMessages.all(session.session_id) as any[];
     if (!rows.length) continue;
 
@@ -210,7 +212,9 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
         .get(session.session_id, i) as any;
 
       try {
-        console.debug("[syncChunks] embedding chunk", i, "len:", chunk.text.length);
+        onProgress?.(
+          `${bar(sessionNum, sessions.length)} ${sessionNum}/${sessions.length} embedding ${session.project} session ${session.session_id}`,
+        );
         const vec = await embed(chunk.text);
         const existing = hasVec.get(chunkRow.id);
         if (existing) {
@@ -220,21 +224,18 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
         }
         embedded++;
         bytesEmbedded += chunk.text.length;
-        onProgress?.(
-          `${embedded} chunks from ${sessions.length} sessions (${fmtSize(bytesEmbedded)})`,
-        );
       } catch (e: any) {
+        // ora v10: console output prints cleanly above the running spinner
         console.error(
-          `  embed failed for ${session.session_id}[${i}]: ${e.message}`,
+          `✗ embed failed for ${session.session_id}[${i}]: ${e.message}`,
         );
       }
       i++;
     }
 
-    console.debug("[syncChunks] session done, total chunks:", i);
+    console.log(`✓ ${i} chunks  ${session.project}  (${session.session_id})`);
     deleteOldChunks.run(session.session_id, i);
   }
-  console.debug("[syncChunks] all done, embedded:", embedded);
   return embedded;
 }
 

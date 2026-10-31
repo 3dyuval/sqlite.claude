@@ -33,6 +33,12 @@ export function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+export function bar(current: number, total: number, width = 20): string {
+  const ratio = total > 0 ? Math.min(1, current / total) : 0;
+  const filled = Math.round(ratio * width);
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
+}
+
 export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
