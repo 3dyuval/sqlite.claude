@@ -32,11 +32,11 @@ claude-sql sql "<query>"
 
 1. **Sync** (`claude-sql sync`) — ingests JSONL transcripts into SQLite, append-only with mtime tracking
 2. **Search** (`claude-sql search`) — keyword by default, `--semantic` for similarity, with filters
-3. **SQLite database** (`~/.claude/claude.sqlite`) — three layers: messages, FTS, vectors
+3. **SQLite database** (`$XDG_DATA_HOME/claude-sql/claude.sqlite`) — three layers: messages, FTS, vectors
 
 ### Database Location
 
-Resolves via `$CLAUDE_CONFIG_DIR/claude/claude.sqlite`, falling back to `~/.claude/claude.sqlite`.
+A single user-global file at `$XDG_DATA_HOME/claude-sql/claude.sqlite` (default `~/.local/share/claude-sql/claude.sqlite`). The path is absolute and has no clone-relative component, so every checkout of this skill — on every agent client — reads and writes the **same** database. Override the directory with `SQLITE_CLAUDE_DATA_DIR`, or the full path with `DB_PATH`.
 
 ## Configuration
 
