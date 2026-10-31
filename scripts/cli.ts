@@ -4,7 +4,7 @@ import { defineCommand, runMain } from "citty";
 import { match } from "ts-pattern";
 import {
   type Result, getDb,
-  sync, recent, fts, semantic, dump, sql, list,
+  sync, fts, semantic, dump, sql, list,
 } from "./lib/index.ts";
 
 const searchArgs = {
@@ -88,13 +88,6 @@ const main = defineCommand({
         handleResult(await withDb((db) => sync(db)));
       },
     }),
-    recent: defineCommand({
-      meta: { description: "List recent sessions" },
-      args: searchArgs,
-      async run({ args }) {
-        handleResult(await withDb((db) => recent(db, parseOpts(args))));
-      },
-    }),
     search: defineCommand({
       meta: { description: "Search history (keyword by default, --semantic for similarity)" },
       args: {
@@ -137,9 +130,21 @@ const main = defineCommand({
       },
     }),
     list: defineCommand({
-      meta: { description: "List all projects with session counts" },
-      async run() {
-        handleResult(await withDb((db) => list(db)));
+      meta: {
+        description:
+          "List projects (default), sessions (--sessions), or one session's messages (--session <id>)",
+      },
+      args: {
+        sessions: {
+          type: "boolean",
+          description: "List sessions instead of projects",
+        },
+        ...searchArgs,
+      },
+      async run({ args }) {
+        handleResult(
+          await withDb((db) => list(db, { ...parseOpts(args), sessions: args.sessions })),
+        );
       },
     }),
   },

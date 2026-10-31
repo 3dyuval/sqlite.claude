@@ -4,7 +4,6 @@ export * from "./env.ts";
 export * from "./utils.ts";
 export * from "./chunks.ts";
 export { sync } from "./ops/sync.ts";
-export { recent } from "./ops/recent.ts";
 export { fts } from "./ops/fts.ts";
 export { semantic } from "./ops/semantic.ts";
 export { dump } from "./ops/dump.ts";

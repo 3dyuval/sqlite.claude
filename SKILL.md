@@ -22,8 +22,10 @@ All commands are available via `claude-sql`:
 
 ```bash
 claude-sql sync                  # ingest transcripts + embed chunks
+claude-sql list                  # projects (default)
+claude-sql list --sessions [--project <glob>] [--days <n>] [--limit <n>]
+claude-sql list --session <id>   # drill into one session's messages
 claude-sql dump [--project] [--days <n>]
-claude-sql recent [--project] [--days <n>] [--limit <n>]
 claude-sql search "<query>" [--semantic] [--project <glob>] [--days <n>] [--session <id>]
 claude-sql sql "<query>"
 ```
@@ -126,7 +128,7 @@ SELECT datetime(timestamp/1000, 'unixepoch', 'localtime') as time, ...
 ### Drill into a session
 
 ```bash
-claude-sql search "" --session <session_id>
+claude-sql list --session <session_id>
 ```
 
 ### Useful aggregate queries
