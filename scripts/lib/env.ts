@@ -13,6 +13,9 @@ process.env.SUPPRESS_NO_CONFIG_WARNING = "true";
 
 const { default: config } = await import("config");
 
+/** Full resolved config object (all sources merged). */
+export const CONFIG: Record<string, unknown> = config.util.toObject();
+
 type Get = <T>(key: string) => T | undefined;
 
 const get: Get = (key) => (config.has(key) ? config.get(key) : undefined);

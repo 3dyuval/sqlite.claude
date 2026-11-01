@@ -9,3 +9,4 @@ export { semantic } from "./ops/semantic.ts";
 export { dump } from "./ops/dump.ts";
 export { sql } from "./ops/sql.ts";
 export { list } from "./ops/list.ts";
+export { stats, health } from "./ops/health.ts";

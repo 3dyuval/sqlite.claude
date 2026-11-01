@@ -4,7 +4,7 @@ import { defineCommand, runMain } from "citty";
 import { match } from "ts-pattern";
 import {
   type Result, getDb,
-  sync, fts, semantic, dump, sql, list,
+  sync, fts, semantic, dump, sql, list, health,
 } from "./lib/index.ts";
 
 const searchArgs = {
@@ -114,6 +114,12 @@ const main = defineCommand({
       args: searchArgs,
       async run({ args }) {
         handleResult(await withDb((db) => dump(db, parseOpts(args))));
+      },
+    }),
+    health: defineCommand({
+      meta: { description: "Show DB stats, path, and resolved config" },
+      async run() {
+        handleResult(await withDb((db) => Promise.resolve(health(db))));
       },
     }),
     sql: defineCommand({

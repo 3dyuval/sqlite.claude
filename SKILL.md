@@ -22,6 +22,7 @@ All commands are available via `claude-sql`:
 
 ```bash
 claude-sql sync                  # ingest transcripts + embed chunks
+claude-sql health                # DB stats, path, and resolved config
 claude-sql list                  # projects (default)
 claude-sql list --sessions [--project <glob>] [--days <n>] [--limit <n>]
 claude-sql list --session <id>   # drill into one session's messages

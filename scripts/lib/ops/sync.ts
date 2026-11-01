@@ -13,11 +13,11 @@ import {
   requireEmbedConfig,
 } from "../env.ts";
 import { chunkMessages } from "../chunks.ts";
+import { stats } from "./health.ts";
 import {
   extractText,
   extractTools,
   tsToUnix,
-  fmtSize,
   bar,
   sha256,
   embed,
@@ -213,7 +213,7 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
 
       try {
         onProgress?.(
-          `${bar(sessionNum, sessions.length)} ${sessionNum}/${sessions.length} embedding ${session.project} session ${session.session_id}`,
+          `${bar(sessionNum, sessions.length)} ${sessionNum}/${sessions.length} ${session.project} session ${session.session_id}`,
         );
         const vec = await embed(chunk.text);
         const existing = hasVec.get(chunkRow.id);
@@ -244,28 +244,6 @@ export async function sync(db: Database): Promise<Result> {
   if (configError) return configError;
 
   const noStdin = { discardStdin: false };
-  const lines: string[] = [];
-  let lastProgress = "";
-
-  const printStats = () => {
-    const stats = db
-      .prepare(`
-      SELECT
-        (SELECT count(*) FROM log) as messages,
-        (SELECT count(DISTINCT session_id) FROM log) as sessions,
-        (SELECT count(*) FROM chunks) as chunks,
-        (SELECT count(*) FROM chunks_vec) as vectors
-    `)
-      .get() as any;
-    const m = stats.chunks - stats.vectors;
-    lines.push(
-      `${stats.messages} messages, ${stats.sessions} sessions, ${stats.chunks} chunks, ${stats.vectors} vectors`,
-    );
-    if (m > 0)
-      lines.push(`! ${m} chunks missing embeddings. Re-run with inference server running`);
-  };
-
-  printStats();
 
   const spin = ora({ ...noStdin, text: "Syncing messages…" }).start();
   const syncResult = syncLog(db, (s) => {
@@ -273,9 +251,6 @@ export async function sync(db: Database): Promise<Result> {
   });
   const existing = syncResult.updatedSessions - syncResult.newSessions;
   spin.succeed(
-    `${syncResult.messages} new messages. ${syncResult.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`,
-  );
-  lines.push(
     `${syncResult.messages} new messages. ${syncResult.newSessions} new sessions${existing ? `, ${existing} updated` : ""}`,
   );
 
@@ -286,7 +261,6 @@ export async function sync(db: Database): Promise<Result> {
     .catch(() => false);
   if (!serverOk) {
     ora(noStdin).fail(`Cannot reach inference server at ${EMBED_BASE_URL}`);
-    lines.push(`Cannot reach inference server at ${EMBED_BASE_URL}`);
   } else {
     const pending = db
       .prepare(`
@@ -311,16 +285,10 @@ export async function sync(db: Database): Promise<Result> {
       text: `Syncing embeddings… 0/${pending.n} sessions`,
     }).start();
     const embCount = await syncChunks(db, (s) => {
-      lastProgress = s;
       spin2.text = `Syncing embeddings… ${s}`;
     });
     spin2.succeed(`${embCount} chunks embedded`);
-    lines.push(`${embCount} chunks embedded`);
   }
 
-  if (lastProgress) lines.push(lastProgress);
-  printStats();
-  lines.push(db.filename);
-
-  return ok(lines.join("\n"));
+  return ok(stats(db));
 }
