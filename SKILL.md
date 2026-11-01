@@ -70,6 +70,7 @@ Every user/assistant message with session context inlined. No joins needed.
 | `role` | TEXT | `user` or `assistant` |
 | `text` | TEXT | extracted text content (tool_use blocks excluded) |
 | `tools` | TEXT | JSON array of tool names used, or NULL |
+| `tool_calls` | TEXT | JSON array of `{name, input}` per tool_use (full args), or NULL |
 | `model` | TEXT | model ID (assistant messages only) |
 | `timestamp` | INTEGER | unix ms |
 
@@ -144,6 +145,12 @@ SELECT json_each.value as tool, count(*) as uses
 FROM log, json_each(log.tools)
 WHERE tools IS NOT NULL
 GROUP BY tool ORDER BY uses DESC;
+
+-- top Bash commands (leading token) from full tool-call args
+SELECT substr(json_extract(tc.value,'$.input.command'), 1, 60) as cmd, count(*) as n
+FROM log, json_each(log.tool_calls) tc
+WHERE json_extract(tc.value,'$.name') = 'Bash'
+GROUP BY cmd ORDER BY n DESC LIMIT 20;
 
 -- daily message volume
 SELECT date(timestamp/1000, 'unixepoch', 'localtime') as day, count(*) as msgs

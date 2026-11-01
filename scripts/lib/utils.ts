@@ -20,6 +20,16 @@ export function extractTools(content: any): string | null {
   return tools.length ? JSON.stringify(tools) : null;
 }
 
+// Full tool-call detail: [{ name, input }] per tool_use block, so queries can
+// recover the actual Bash command / file path / MCP args without the raw JSONL.
+export function extractToolCalls(content: any): string | null {
+  if (!Array.isArray(content)) return null;
+  const calls = content
+    .filter((c: any) => c.type === "tool_use")
+    .map((c: any) => ({ name: c.name, input: c.input ?? null }));
+  return calls.length ? JSON.stringify(calls) : null;
+}
+
 export function tsToUnix(ts: any): number | null {
   if (ts == null) return null;
   if (typeof ts === "number") return ts;

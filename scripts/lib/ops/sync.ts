@@ -17,6 +17,7 @@ import { stats } from "./health.ts";
 import {
   extractText,
   extractTools,
+  extractToolCalls,
   tsToUnix,
   bar,
   sha256,
@@ -52,8 +53,8 @@ function syncLog(db: Database, onProgress?: (msg: string) => void) {
     "INSERT OR REPLACE INTO sync_state (file_path, mtime, size) VALUES (?, ?, ?)",
   );
   const insertLog = db.prepare(`
-    INSERT INTO log (session_id, project, display, uuid, parent_uuid, role, text, tools, model, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO log (session_id, project, display, uuid, parent_uuid, role, text, tools, tool_calls, model, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const deleteBySession = db.prepare("DELETE FROM log WHERE session_id = ?");
   const countBySession = db.prepare(
@@ -122,6 +123,7 @@ function syncLog(db: Database, onProgress?: (msg: string) => void) {
           entry.type,
           text || null,
           extractTools(entry.message?.content),
+          extractToolCalls(entry.message?.content),
           entry.message?.model ?? null,
           tsToUnix(entry.timestamp),
         );

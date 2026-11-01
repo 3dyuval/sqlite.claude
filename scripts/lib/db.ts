@@ -19,6 +19,7 @@ function ensureSchema(db: Database) {
       role        TEXT NOT NULL,
       text        TEXT,
       tools       TEXT,
+      tool_calls  TEXT,
       model       TEXT,
       timestamp   INTEGER
     );
@@ -67,6 +68,11 @@ function ensureSchema(db: Database) {
   db.run(
     `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[${EMBED_DIM}])`
   );
+
+  // migrate existing DBs created before tool_calls existed
+  const cols = db.query("PRAGMA table_info(log)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "tool_calls"))
+    db.run("ALTER TABLE log ADD COLUMN tool_calls TEXT");
 }
 
 export function getDb(): Database | Result {
