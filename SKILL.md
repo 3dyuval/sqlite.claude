@@ -22,6 +22,7 @@ All commands are available via `claude-sql`:
 
 ```bash
 claude-sql sync                  # ingest transcripts + embed chunks
+claude-sql sync --rebuild --force # DESTRUCTIVE: wipe index + re-ingest from scratch
 claude-sql health                # DB stats, path, and resolved config
 claude-sql list                  # projects (default)
 claude-sql list --sessions [--project <glob>] [--days <n>] [--limit <n>]

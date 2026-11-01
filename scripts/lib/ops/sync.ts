@@ -241,11 +241,24 @@ async function syncChunks(db: Database, onProgress?: (msg: string) => void) {
   return embedded;
 }
 
-export async function sync(db: Database): Promise<Result> {
+export async function sync(
+  db: Database,
+  opts: { rebuild?: boolean } = {},
+): Promise<Result> {
   const configError = requireEmbedConfig();
   if (configError) return configError;
 
   const noStdin = { discardStdin: false };
+
+  // Destructive: wipe the message index and re-ingest every transcript from
+  // scratch. log and sync_state must be cleared together — clearing only
+  // sync_state makes every file look new and duplicates all rows.
+  if (opts.rebuild) {
+    db.transaction(() => {
+      db.run("DELETE FROM log");
+      db.run("DELETE FROM sync_state");
+    })();
+  }
 
   const spin = ora({ ...noStdin, text: "Syncing messages…" }).start();
   const syncResult = syncLog(db, (s) => {

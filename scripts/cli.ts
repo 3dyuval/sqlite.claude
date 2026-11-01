@@ -84,8 +84,27 @@ const main = defineCommand({
       meta: {
         description: "Sync messages + embeddings from JSONL transcripts",
       },
-      async run() {
-        handleResult(await withDb((db) => sync(db)));
+      args: {
+        rebuild: {
+          type: "boolean",
+          description:
+            "DESTRUCTIVE: wipe the message index and re-ingest all transcripts from scratch (requires --force)",
+        },
+        force: {
+          type: "boolean",
+          description: "Confirm a destructive --rebuild",
+        },
+      },
+      async run({ args }) {
+        if (args.rebuild && !args.force) {
+          console.error(
+            "--rebuild deletes all indexed messages and rebuilds from the transcripts\n" +
+              "currently on disk. Transcripts that have since rotated off disk are NOT\n" +
+              "recoverable this way. Re-run with --force to proceed.",
+          );
+          process.exit(1);
+        }
+        handleResult(await withDb((db) => sync(db, { rebuild: args.rebuild })));
       },
     }),
     search: defineCommand({
