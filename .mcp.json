@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "clog": {
+      "enabled": true,
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "scripts/mcp-server.ts"] 
+    }
+  }
+}

@@ -16,7 +16,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@opencode-ai/plugin": "^1.2.16",
     "citty": "^0.2.1",
     "ora": "^10.0.0",
